@@ -65,7 +65,6 @@ func (bc *tcpBackendConn) mainLoop() error {
 }
 
 func (bc *tcpBackendConn) connect() (net.Conn, chan<- *hprose.Call, error) {
-	println("connect backend")
 	c, err := net.DialTimeout("tcp", bc.addr, 20*time.Second)
 	if err != nil {
 		return nil, nil, err

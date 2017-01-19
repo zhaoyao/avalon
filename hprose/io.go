@@ -1,21 +1,23 @@
 package hprose
 
 import (
+	"errors"
 	"fmt"
 	hpio "github.com/hprose/hprose-golang/io"
 	"io"
+	"unicode/utf8"
 )
 
-type reader struct {
+type Reader struct {
 	b   []byte
 	pos int
 }
 
-func newReader(b []byte) *reader {
-	return &reader{b: b, pos: 0}
+func NewReader(b []byte) *Reader {
+	return &Reader{b: b, pos: 0}
 }
 
-func (r *reader) Read() (byte, error) {
+func (r *Reader) Read() (byte, error) {
 	if r.pos >= len(r.b) {
 		return 0, io.EOF
 	}
@@ -25,7 +27,7 @@ func (r *reader) Read() (byte, error) {
 	return b, nil
 }
 
-func (r *reader) Peek() (byte, error) {
+func (r *Reader) Peek() (byte, error) {
 	if r.pos >= len(r.b) {
 		return 0, io.EOF
 	}
@@ -33,10 +35,11 @@ func (r *reader) Peek() (byte, error) {
 	return r.b[r.pos], nil
 }
 
-func (r *reader) ReadStr() (*HStr, error) {
+func (r *Reader) ReadStr() (*HStr, error) {
 	if _, err := r.expect(hpio.TagString); err != nil {
 		return nil, err
 	}
+
 	len, err := r.readInt64(hpio.TagQuote)
 	if err != nil {
 		return nil, err
@@ -48,7 +51,7 @@ func (r *reader) ReadStr() (*HStr, error) {
 	return &HStr{N: len, S: r.b[start : r.pos-1]}, nil
 }
 
-func (r *reader) Skip(n int) error {
+func (r *Reader) Skip(n int) error {
 	if r.pos+n >= len(r.b) {
 		return io.EOF
 	}
@@ -56,7 +59,7 @@ func (r *reader) Skip(n int) error {
 	return nil
 }
 
-func (r *reader) SkipUtil(tags ...byte) (byte, error) {
+func (r *Reader) SkipUtil(tags ...byte) (byte, error) {
 	for r.pos < len(r.b) {
 		b := r.b[r.pos]
 		for _, t := range tags {
@@ -69,7 +72,7 @@ func (r *reader) SkipUtil(tags ...byte) (byte, error) {
 	return 0, io.EOF
 }
 
-func (r *reader) expect(tags ...byte) (byte, error) {
+func (r *Reader) expect(tags ...byte) (byte, error) {
 	b, err := r.Read()
 	if err != nil {
 		return 0, err
@@ -83,7 +86,7 @@ func (r *reader) expect(tags ...byte) (byte, error) {
 	return 0, fmt.Errorf("hprose: unexpected tag %d, %v expected", b, tags)
 }
 
-func (r *reader) readInt64(endTag byte) (int64, error) {
+func (r *Reader) readInt64(endTag byte) (int64, error) {
 	b, err := r.Read()
 	if err != nil {
 		return 0, err
@@ -108,8 +111,24 @@ func (r *reader) readInt64(endTag byte) (int64, error) {
 	return i, err
 }
 
+func (r *Reader) ReadUTF8() (rune, error) {
+	if _, err := r.expect(hpio.TagUTF8Char); err != nil {
+		return utf8.RuneError, err
+	}
+	if r.pos >= len(r.b) {
+		return utf8.RuneError, io.EOF
+	}
+	ret, size := utf8.DecodeRune(r.b[r.pos:])
+	if ret == utf8.RuneError {
+		return ret, errors.New("hprose: invalid utf8 encoding")
+	}
+
+	_ = r.Skip(size)
+	return ret, nil
+}
+
 /*
-func (r *reader) utf8CharLen() (int, error) {
+func (r *Reader) utf8CharLen() (int, error) {
 	b, err := r.Peek()
 	if err != nil {
 		return 0, err
@@ -132,7 +151,7 @@ func (r *reader) utf8CharLen() (int, error) {
 	}
 }
 
-func (r *reader) resolveTypeLen(tag byte) (len int, err error) {
+func (r *Reader) resolveTypeLen(tag byte) (len int, err error) {
 	if tag >= '0' && tag <= '9' {
 		return 0, nil
 	}

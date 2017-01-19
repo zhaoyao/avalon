@@ -45,7 +45,7 @@ func DecodeRequest(r io.Reader) (*Request, error) {
 	}
 
 	b := buf[4:]
-	dr := &reader{b: b, pos: 0}
+	dr := NewReader(b)
 	req, err := decodeRequest(dr)
 
 	if dr.pos != len(b) {
@@ -63,21 +63,22 @@ func EncodeRequest(r *Request, w io.Writer) error {
 func EncodeCall(c *Call, w io.Writer, withLen bool) error {
 	b := bytes.NewBuffer(make([]byte, 0, 512))
 
-	b.WriteByte(hpio.TagCall)
+	if !c.FuncList {
+		b.WriteByte(hpio.TagCall)
+		// func name
+		b.WriteByte(hpio.TagString)
+		fmt.Fprintf(b, "%d", c.Func.N)
+		b.WriteByte(hpio.TagQuote)
+		b.Write(c.Func.S)
+		b.WriteByte(hpio.TagQuote)
 
-	// func name
-	b.WriteByte(hpio.TagString)
-	fmt.Fprintf(b, "%d", c.Func.N)
-	b.WriteByte(hpio.TagQuote)
-	b.Write(c.Func.S)
-	b.WriteByte(hpio.TagQuote)
-
-	if len(c.RawArgList) > 0 {
-		b.WriteByte(hpio.TagList)
-		fmt.Fprintf(b, "%d", c.NumArgs)
-		b.WriteByte(hpio.TagOpenbrace)
-		b.Write(c.RawArgList)
-		b.WriteByte(hpio.TagClosebrace)
+		if len(c.RawArgList) > 0 {
+			b.WriteByte(hpio.TagList)
+			fmt.Fprintf(b, "%d", c.NumArgs)
+			b.WriteByte(hpio.TagOpenbrace)
+			b.Write(c.RawArgList)
+			b.WriteByte(hpio.TagClosebrace)
+		}
 	}
 	b.WriteByte(hpio.TagEnd)
 
@@ -104,15 +105,19 @@ func DecodeResponse(r io.Reader) (*Response, error) {
 	}
 
 	b := buf[4:]
-	dr := newReader(b)
+	dr := NewReader(b)
 	resp, err := decodeResponse(dr)
 
+	if err != nil {
+		return nil, err
+	}
+
 	if dr.pos != len(b) {
-		return nil, errors.New("bad response")
+		return nil, fmt.Errorf("bad response: not fully consumed, total: %d pos: %d", len(b), dr.pos)
 	}
 
 	//log.Debugf("--> Response: %s", string(b))
-	return resp, err
+	return resp, nil
 }
 
 func EncodeResponse(r *Response, w io.Writer) error {
@@ -144,7 +149,7 @@ func EncodeResponse(r *Response, w io.Writer) error {
 	return err
 }
 
-func decodeRequest(r *reader) (*Request, error) {
+func decodeRequest(r *Reader) (*Request, error) {
 	var (
 		tag      byte
 		err      error
@@ -211,20 +216,35 @@ func decodeRequest(r *reader) (*Request, error) {
 	return &Request{Raw: r.b, CallList: callList}, nil
 }
 
-func decodeResponse(r *reader) (*Response, error) {
+func decodeResponse(r *Reader) (*Response, error) {
 	var (
 		tag        byte
 		err        error
 		resultList []*Result
 	)
 	for {
-		tag, err = r.expect(hpio.TagResult, hpio.TagError, hpio.TagEnd)
+		tag, err = r.expect(hpio.TagResult, hpio.TagError, hpio.TagEnd, hpio.TagFunctions)
 		if err != nil {
 			return nil, err
 		}
 
 		if tag == hpio.TagEnd {
 			break
+		}
+
+		if tag == hpio.TagFunctions {
+			body := r.b[r.pos:]
+			r.pos = len(r.b)
+			return &Response{
+				Raw: r.b,
+				ResultList: []*Result{
+					&Result{
+						Success: true,
+						Body:    body,
+						Origin:  body,
+					},
+				},
+			}, nil
 		}
 
 		result := &Result{Origin: r.b}

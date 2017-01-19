@@ -18,8 +18,6 @@ func newTCPConn(r *Router) func(net.Conn) (serverkit.TCPConn, error) {
 	}
 }
 func newTCPConn0(c net.Conn, r *Router) (serverkit.TCPConn, error) {
-	//log.WithField("addr", c.RemoteAddr()).Info("new connection")
-
 	return &tcpConn{nc: c, router: r}, nil
 }
 
