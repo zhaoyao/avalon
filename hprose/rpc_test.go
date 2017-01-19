@@ -6,7 +6,7 @@ import (
 )
 
 func parseCall(t *testing.T, s string) *Request {
-	r := newReader([]byte(s))
+	r := NewReader([]byte(s))
 
 	ret, err := decodeRequest(r)
 
@@ -18,7 +18,7 @@ func parseCall(t *testing.T, s string) *Request {
 }
 
 func parseResponse(t *testing.T, s string) *Response {
-	r := newReader([]byte(s))
+	r := NewReader([]byte(s))
 
 	ret, err := decodeResponse(r)
 
